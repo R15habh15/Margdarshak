@@ -164,24 +164,27 @@ export function useTrafficData() {
     } catch (e) {}
   }, [])
 
+  const simRunningRef = useRef(false)
+  useEffect(() => { simRunningRef.current = simStatus.running }, [simStatus.running])
+
   // ── Periodic polling ──
   useEffect(() => {
     pollStatus()
     pollRef.current = setInterval(() => {
       pollStatus()
-      if (simStatus.running) pollMetrics()
+      if (simRunningRef.current) pollMetrics()
     }, POLL_INTERVAL_MS)
 
     return () => {
-      clearInterval(pollRef.current)
+      if (pollRef.current) clearInterval(pollRef.current)
       stopStream()
     }
-  }, [])
+  }, [pollStatus, pollMetrics, stopStream])
 
   // ── Poll metrics when sim is running ──
   useEffect(() => {
     if (simStatus.running) pollMetrics()
-  }, [simStatus.running])
+  }, [simStatus.running, pollMetrics])
 
   return {
     // State

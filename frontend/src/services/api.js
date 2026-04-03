@@ -10,7 +10,7 @@ const WS_URL   = import.meta.env.VITE_WS_URL  || 'ws://localhost:8000'
 
 const http = axios.create({
   baseURL: BASE_URL,
-  timeout: 30_000,
+  timeout: 300_000,
   headers: { 'Content-Type': 'application/json' },
 })
 

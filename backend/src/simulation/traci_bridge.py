@@ -113,6 +113,30 @@ class TraCIBridge:
     def get_active_vehicle_count(self) -> int:
         return traci.vehicle.getIDCount()
 
+    def convert_geo(self, x: float, y: float) -> tuple:
+        """Convert internal XY to (Lon, Lat)."""
+        if not self.connected:
+            return (0.0, 0.0)
+        return traci.simulation.convertGeo(x, y)
+
+    def get_all_vehicle_positions(self) -> list:
+        if not self.connected:
+            return []
+        positions = []
+        for veh_id in traci.vehicle.getIDList():
+            x, y = traci.vehicle.getPosition(veh_id)
+            lon, lat = traci.simulation.convertGeo(x, y)
+            speed = traci.vehicle.getSpeed(veh_id) * 3.6
+            angle = traci.vehicle.getAngle(veh_id)
+            positions.append({
+                "id": veh_id, 
+                "lng": lon, 
+                "lat": lat,
+                "speed": round(speed, 2),
+                "angle": round(angle, 2)
+            })
+        return positions
+
     def is_simulation_finished(self) -> bool:
         return (
             traci.simulation.getMinExpectedNumber() == 0

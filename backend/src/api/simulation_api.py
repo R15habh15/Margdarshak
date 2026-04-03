@@ -76,6 +76,31 @@ async def start_simulation(req: StartRequest):
 
         _env = TrafficEnv(config_path=config_file, mode=mode, use_gui=req.use_gui)
         _env.start(port=req.port)
+
+        # ── Auto-load AI Agent ──
+        if req.mode == "ai":
+            try:
+                from ..brain.model_manager import ModelManager
+                from ..brain.drl_agent import DRLAgent
+                from ..utils.graph_builder import load_sumo_network, build_tl_graph
+                
+                logger.info("Initializing AI Agent for optimization...")
+                tl_ids = _env.bridge.get_traffic_light_ids()
+                net_file = os.path.join(SUMO_NETWORKS_DIR, req.config_path.replace(".sumocfg", ".net.xml"))
+                net = load_sumo_network(net_file)
+                _, edge_index, _ = build_tl_graph(net, tl_ids)
+
+                global _agent
+                _agent = DRLAgent(tl_ids=tl_ids, edge_index=edge_index)
+                
+                mm = ModelManager()
+                if mm.load_inference_model(_agent, "rl_policy.pt"):
+                    logger.info("AI Model 'rl_policy.pt' loaded successfully.")
+                else:
+                    logger.warning("No trained AI model found. Simulation will use default heuristics.")
+            except Exception as e:
+                logger.error(f"AI Auto-load error: {e}")
+
         return {
             "status": "started",
             "mode": req.mode,
@@ -184,9 +209,12 @@ async def simulation_stream(websocket: WebSocket):
                 "departed":         state["departed"],
                 "arrived":          state["arrived"],
                 "mode":             state["mode"],
+                "vehicles":         _env.bridge.get_all_vehicle_positions(),
                 "traffic_lights":   {
                     tl_id: {
                         "phase":         data["phase"],
+                        "lng":           data["lng"],
+                        "lat":           data["lat"],
                         "total_vehicles": sum(l["vehicle_count"] for l in data["lanes"].values()),
                         "total_queue":    sum(l["queue_length"]  for l in data["lanes"].values()),
                         "total_wait":     sum(l["waiting_time"]  for l in data["lanes"].values()),
@@ -197,7 +225,7 @@ async def simulation_stream(websocket: WebSocket):
             await websocket.send_json(payload)
 
             # Yield control so FastAPI can handle other requests
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected.")

@@ -68,7 +68,7 @@ def generate_routes(
             trips_cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
             cwd=BASE_DIR
         )
 

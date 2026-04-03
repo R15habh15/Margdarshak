@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Improve reliability for large downloads
 ox.settings.all_oneway = True
-ox.settings.timeout = 180
+ox.settings.timeout = 300
 ox.settings.use_cache = True
 
 OSM_RAW_DIR = os.path.join(os.path.dirname(__file__), "../../../data/osm_raw")
@@ -59,7 +59,7 @@ def download_osm_by_place(place_name: str, dist: int = 2000) -> str:
 
     try:
         # Attempt polygon download
-        graph = ox.graph_from_place(place_name, network_type="drive")
+        graph = ox.graph_from_place(place_name, network_type="drive", simplify=False)
 
     except Exception as e:
         logger.warning(
@@ -75,7 +75,8 @@ def download_osm_by_place(place_name: str, dist: int = 2000) -> str:
             graph = ox.graph_from_point(
                 point,
                 dist=dist,
-                network_type="drive"
+                network_type="drive",
+                simplify=False
             )
 
         except Exception as e2:
@@ -114,7 +115,8 @@ def download_osm_by_bbox(north: float, south: float, east: float, west: float, n
             south,
             east,
             west,
-            network_type="drive"
+            network_type="drive",
+            simplify=False
         )
 
         graph = _fix_oneway_dtype(graph)

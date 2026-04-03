@@ -27,8 +27,8 @@ export default function StatsPanel({ currentMetrics, simStatus }) {
         <MetricCard label="Queue Length"    value={total_queue}      color="warning"  icon={Layers}       />
         <MetricCard label="Total Wait"      value={total_wait?.toFixed(0)} unit="s"  color="danger"  icon={Clock}  />
         <MetricCard label="Avg Speed"       value={avg_speed_kmh}    unit="km/h"      color="success"  icon={Gauge}  />
-        <MetricCard label="Departed"        value={departed}         color="muted"    icon={ArrowUpRight} />
-        <MetricCard label="Throughput"      value={throughputRate}   unit="%"         color="success"  icon={Car}  />
+        <MetricCard label="Commute Score"   value={(avg_speed_kmh / 50 * 100).toFixed(0)} unit="%" color="accent" icon={ArrowUpRight} />
+        <MetricCard label="Efficiency"      value={throughputRate}   unit="%"         color="success"  icon={Layers}  />
       </div>
     </div>
   )

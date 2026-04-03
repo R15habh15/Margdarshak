@@ -138,9 +138,16 @@ class TrafficEnv:
                 except Exception:
                     phase = 0
 
+                # Get coordinates for the traffic light
+                junction_id = traci.trafficlight.getJunctionID(tl_id)
+                jx, jy = traci.junction.getPosition(junction_id)
+                jlon, jlat = self.bridge.convert_geo(jx, jy)
+
                 tl_states[tl_id] = {
                     "phase": phase,
                     "lanes": lane_data,
+                    "lng": jlon,
+                    "lat": jlat,
                 }
 
             except Exception as e:

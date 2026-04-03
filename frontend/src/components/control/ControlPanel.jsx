@@ -53,13 +53,32 @@ export default function ControlPanel({
     setConfigFile(cfg)
 
     setPipelineStep('done')
-    setPipelineMsg(`Ready: ${cfg}`)
+    setPipelineMsg(`Ready: ${cfg}. Launching...`)
+
+    // Auto-start simulation
+    onStart(cfg, mode)
 
   } catch (e) {
     setPipelineStep('error')
     setPipelineMsg(`Error: ${e.message}`)
   }
 }
+
+  const handleRandomize = async () => {
+    if (!configFile) return
+    try {
+      setPipelineStep('routes')
+      setPipelineMsg('Re-randomizing traffic flows...')
+      const netFile = configFile.replace('.sumocfg', '.net.xml')
+      const numVehicles = Math.floor(Math.random() * 400) + 100 // 100-500 vehicles
+      await mapApi.generateRoutes(netFile, { numVehicles })
+      setPipelineStep('done')
+      setPipelineMsg(`Traffic randomized! (${numVehicles} vehicles)`)
+    } catch (e) {
+      setPipelineStep('error')
+      setPipelineMsg(`Randomization failed: ${e.message}`)
+    }
+  }
 
   const handleStart = () => {
     if (!configFile) return
@@ -103,6 +122,14 @@ export default function ControlPanel({
                 : <Download size={13} />
               }
             </button>
+            <button
+              onClick={handleRandomize}
+              disabled={!configFile || (!!pipelineStep && pipelineStep !== 'done')}
+              className="btn btn-ghost px-2 border-border"
+              title="Randomize Traffic"
+            >
+              <RefreshCw size={13} className={pipelineStep === 'routes' ? 'animate-spin' : ''}/>
+            </button>
           </div>
 
           {/* Pipeline status */}
@@ -131,15 +158,20 @@ export default function ControlPanel({
 
         {/* Mode selector */}
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
-            Signal Mode
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
+              Signal Mode
+            </label>
+            {mode === 'ai' && (
+               <span className="text-[9px] font-mono text-accent animate-pulse">● AI OPTIMIZED</span>
+            )}
+          </div>
           <div className="grid grid-cols-3 gap-1.5">
             {['static','ai','backpressure'].map(m => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className={`py-1.5 rounded text-[11px] font-display font-semibold uppercase tracking-wider border transition-all
+                className={`py-1.5 rounded text-[11px] font-display font-semibold uppercase tracking-wider border transition-all flex items-center justify-center gap-1.5
                   ${mode === m
                     ? m === 'ai' ? 'bg-accent/15 text-accent border-accent/40'
                       : m === 'backpressure' ? 'bg-warning/15 text-warning border-warning/40'
@@ -147,6 +179,7 @@ export default function ControlPanel({
                     : 'bg-transparent text-muted border-border hover:border-muted/40'
                   }`}
               >
+                {m === 'ai' ? <Zap size={11}/> : m === 'static' ? <Clock size={11}/> : null}
                 {m === 'backpressure' ? 'BP' : m}
               </button>
             ))}

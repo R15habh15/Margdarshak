@@ -109,7 +109,7 @@ def convert_osm_to_sumo(osm_filename: str) -> str:
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
             cwd=BASE_DIR
         )
 
