@@ -1,0 +1,202 @@
+import { useState } from 'react'
+import {
+  Play, Square, RotateCcw, Download, RefreshCw,
+  Zap, Clock, GitCompare, ChevronDown, ChevronUp, Loader2
+} from 'lucide-react'
+import { mapApi } from '../../services/api'
+
+export default function ControlPanel({
+  simStatus, isLoading,
+  onStart, onStop, onReset, onSwitchMode, onSaveComparison,
+}) {
+  const [placeName, setPlaceName]   = useState('')
+  const [configFile, setConfigFile] = useState('')
+  const [mode, setMode]             = useState('static')
+  const [pipelineStep, setPipelineStep] = useState(null)
+  const [pipelineMsg, setPipelineMsg]   = useState('')
+  const [expanded, setExpanded]     = useState(true)
+
+  const isRunning = simStatus?.running
+
+  // ── OSM full pipeline ──
+  const handleImport = async () => {
+  if (!placeName.trim()) return
+
+  try {
+    setPipelineStep('downloading')
+    setPipelineMsg('Downloading OSM map…')
+    await mapApi.downloadByPlace(placeName)
+
+    const osmFile =
+    placeName.replace(/[, ]+/g, '_').toLowerCase() + '.osm'
+
+    setPipelineStep('converting')
+    setPipelineMsg('Converting to SUMO network…')
+
+    const cv = await mapApi.convertToSumo(osmFile)
+
+    if (!cv?.net_path)
+      throw new Error('Backend did not return net_path')
+
+    const netFile = cv.net_path.split(/[\\/]/).pop()
+
+    setPipelineStep('routes')
+    setPipelineMsg('Generating vehicle routes…')
+
+    const rt = await mapApi.generateRoutes(netFile)
+
+    if (!rt?.config)
+      throw new Error('Backend did not return config')
+
+    const cfg = rt.config.split(/[\\/]/).pop()
+
+    setConfigFile(cfg)
+
+    setPipelineStep('done')
+    setPipelineMsg(`Ready: ${cfg}`)
+
+  } catch (e) {
+    setPipelineStep('error')
+    setPipelineMsg(`Error: ${e.message}`)
+  }
+}
+
+  const handleStart = () => {
+    if (!configFile) return
+    onStart(configFile, mode)
+  }
+
+  return (
+    <div className="panel p-4 flex flex-col gap-4">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-sm font-bold uppercase tracking-widest text-white">
+          Control Panel
+        </h2>
+        <button onClick={() => setExpanded(e => !e)} className="text-muted hover:text-white">
+          {expanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+        </button>
+      </div>
+
+      {expanded && <>
+        {/* Map Import */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
+            Import Map
+          </label>
+          <div className="flex gap-2">
+            <input
+              value={placeName}
+              onChange={e => setPlaceName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleImport()}
+              placeholder="e.g. Connaught Place, Delhi"
+              className="flex-1 bg-surface border border-border rounded px-3 py-2 text-xs text-white placeholder-muted/50 focus:outline-none focus:border-accent/50"
+            />
+            <button
+              onClick={handleImport}
+              disabled={!placeName || !!pipelineStep && pipelineStep !== 'done' && pipelineStep !== 'error'}
+              className="btn btn-primary"
+            >
+              {pipelineStep && pipelineStep !== 'done' && pipelineStep !== 'error'
+                ? <Loader2 size={13} className="animate-spin" />
+                : <Download size={13} />
+              }
+            </button>
+          </div>
+
+          {/* Pipeline status */}
+          {pipelineMsg && (
+            <p className={`text-[11px] font-mono px-2 py-1 rounded border
+              ${pipelineStep === 'error' ? 'bg-danger/10 border-danger/30 text-danger'
+              : pipelineStep === 'done'  ? 'bg-success/10 border-success/30 text-success'
+              : 'bg-accent/10 border-accent/30 text-accent'}`}>
+              {pipelineMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Config file */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
+            Config File
+          </label>
+          <input
+            value={configFile}
+            onChange={e => setConfigFile(e.target.value)}
+            placeholder="e.g. delhi.sumocfg"
+            className="bg-surface border border-border rounded px-3 py-2 text-xs text-white placeholder-muted/50 focus:outline-none focus:border-accent/50"
+          />
+        </div>
+
+        {/* Mode selector */}
+        <div className="flex flex-col gap-2">
+          <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
+            Signal Mode
+          </label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {['static','ai','backpressure'].map(m => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`py-1.5 rounded text-[11px] font-display font-semibold uppercase tracking-wider border transition-all
+                  ${mode === m
+                    ? m === 'ai' ? 'bg-accent/15 text-accent border-accent/40'
+                      : m === 'backpressure' ? 'bg-warning/15 text-warning border-warning/40'
+                      : 'bg-muted/15 text-white border-muted/40'
+                    : 'bg-transparent text-muted border-border hover:border-muted/40'
+                  }`}
+              >
+                {m === 'backpressure' ? 'BP' : m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleStart}
+            disabled={isLoading || isRunning || !configFile}
+            className="btn btn-success col-span-2"
+          >
+            {isLoading ? <Loader2 size={13} className="animate-spin"/> : <Play size={13}/>}
+            Start Simulation
+          </button>
+
+          <button onClick={onStop}  disabled={isLoading || !isRunning} className="btn btn-danger">
+            <Square size={13}/> Stop
+          </button>
+          <button onClick={onReset} disabled={isLoading || !isRunning} className="btn btn-warning">
+            <RotateCcw size={13}/> Reset
+          </button>
+        </div>
+
+        {/* Mode switch (mid-simulation) */}
+        {isRunning && (
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
+              Switch Mode Live
+            </label>
+            <div className="flex gap-2">
+              <button onClick={() => onSwitchMode('static')} className="btn btn-ghost flex-1">
+                <Clock size={12}/> Static
+              </button>
+              <button onClick={() => onSwitchMode('ai')} className="btn btn-primary flex-1">
+                <Zap size={12}/> AI
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Save comparison */}
+        <button
+          onClick={onSaveComparison}
+          className="btn btn-ghost w-full"
+        >
+          <GitCompare size={13}/> Save Run for Comparison
+        </button>
+      </>}
+    </div>
+  )
+}

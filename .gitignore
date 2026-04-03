@@ -1,0 +1,71 @@
+# Virtual environments
+backend/venv/
+
+# Python caches and compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment and secrets
+.env
+*.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+
+# Build directories
+build/
+dist/
+
+# Python packages
+*.egg
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VSCode settings
+.vscode/
+
+# IDE directories
+.idea/
+
+# Node modules and logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend build output
+frontend/dist/
+
+# Docker
+docker-compose.override.yml
+
+# Sumo and simulation
+*.out.xml
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Local cache and build artifacts
+/backend/cache/
+/backend/models/
+/data/sumo_networks/
+/frontend/node_modules/
+/frontend/dist/
+
+# Media and temporary files
+*.log
+*.sqlite3
+*.db
+*.tmp
+
+# Other
+# Add custom ignores below this line for project-specific files
