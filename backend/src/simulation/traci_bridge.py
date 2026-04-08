@@ -54,6 +54,13 @@ class TraCIBridge:
             "--no-step-log", "true",
             "--waiting-time-memory", "1000",
             "--no-warnings", "true",
+            # Anti-deadlock: teleport stuck vehicles after 60s
+            "--time-to-teleport", "60",
+            # Anti-deadlock: teleport on collision instead of stopping
+            "--collision.action", "teleport",
+            "--collision.mingap-factor", "0",
+            # Anti-deadlock: faster teleport on highways
+            "--time-to-teleport.highways", "30",
         ]
 
         try:
@@ -142,6 +149,36 @@ class TraCIBridge:
             traci.simulation.getMinExpectedNumber() == 0
             and self.get_active_vehicle_count() == 0
         )
+
+    def get_global_metrics(self) -> dict:
+        """
+        Get network-wide metrics directly from all active vehicles.
+        Returns: {avg_speed_kmh, total_waiting_time, total_halting}
+        """
+        if not self.connected:
+            return {"avg_speed_kmh": 0, "total_waiting_time": 0, "total_halting": 0}
+        
+        veh_ids = traci.vehicle.getIDList()
+        count = len(veh_ids)
+        if count == 0:
+            return {"avg_speed_kmh": 0, "total_waiting_time": 0, "total_halting": 0}
+            
+        total_speed = 0.0
+        total_wait = 0.0
+        total_halting = 0
+        
+        for vid in veh_ids:
+            total_speed += traci.vehicle.getSpeed(vid)
+            total_wait += traci.vehicle.getWaitingTime(vid)
+            if traci.vehicle.getSpeed(vid) < 0.1:
+                total_halting += 1
+                
+        return {
+            "avg_speed_kmh": round((total_speed / count) * 3.6, 2),
+            "total_waiting_time": round(total_wait, 2),
+            "avg_waiting_time": round(total_wait / count, 2),
+            "total_halting": total_halting
+        }
 
     # ------------------------------------------------------------------
     # Traffic Light Control

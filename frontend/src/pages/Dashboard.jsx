@@ -10,6 +10,7 @@ import MetricCard          from '../components/metrics/MetricCard'
 import CongestionChart     from '../components/charts/CongestionChart'
 import WaitTimeChart       from '../components/charts/WaitTimeChart'
 import PerformanceComparison from '../components/comparison/PerformanceComparison'
+import ScenarioPanel       from '../components/control/ScenarioPanel'
 import { AlertTriangle, X } from 'lucide-react'
 
 export default function Dashboard() {
@@ -22,6 +23,14 @@ export default function Dashboard() {
     startSimulation, stopSimulation, resetSimulation,
     switchMode, saveComparison, clearError,
   } = useTrafficData()
+
+  const [mapCenter, setMapCenter] = useState(null)
+
+  const handleMapImported = (data) => {
+    if (data?.center) {
+      setMapCenter(data.center)
+    }
+  }
 
   return (
     <div className="flex flex-col h-screen bg-surface overflow-hidden">
@@ -48,12 +57,15 @@ export default function Dashboard() {
               onReset         = {resetSimulation}
               onSwitchMode    = {switchMode}
               onSaveComparison= {saveComparison}
+              onMapImported   = {handleMapImported}
             />
 
             <StatsPanel
               currentMetrics = {currentMetrics}
               simStatus      = {simStatus}
             />
+
+            <ScenarioPanel simRunning={simStatus?.running} />
 
           </div>
 
@@ -77,7 +89,12 @@ export default function Dashboard() {
             {activeTab === 'map' && (
               <div className="flex flex-col flex-1 gap-3 overflow-hidden">
                 <div className="flex-1 min-h-0">
-                  <TrafficMap tlStates={tlStates} liveState={liveState} />
+                  <TrafficMap 
+                    tlStates={tlStates} 
+                    liveState={liveState} 
+                    simRunning={simStatus?.running}
+                    center={mapCenter}
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3 shrink-0">
                   <CongestionChart history={metricsHistory} />
@@ -95,10 +112,13 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Comparison tab */}
             {activeTab === 'comparison' && (
-              <div className="fade-in">
-                <PerformanceComparison comparison={comparison} />
+              <div className="fade-in overflow-y-auto h-full">
+                <PerformanceComparison
+                  comparison={comparison}
+                  simStatus={simStatus}
+                  onSaveComparison={saveComparison}
+                />
               </div>
             )}
 

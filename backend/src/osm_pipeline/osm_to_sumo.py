@@ -89,13 +89,14 @@ def convert_osm_to_sumo(osm_filename: str) -> str:
     "--ramps.guess",
     "--junctions.join",
 
-    # 🚦 AUTO TRAFFIC LIGHT GENERATION
+    # Traffic light generation
     "--tls.guess", "true",
     "--tls.join", "true",
     "--tls.discard-simple", "false",
+    "--tls.default-type", "actuated",
 
-    # Turn restrictions
-    "--no-turnarounds", "true",
+    # Allow turnarounds — prevents vehicles from getting permanently stuck
+    "--no-turnarounds", "false",
 
     # Keep only drivable roads
     "--keep-edges.by-vclass", "passenger",

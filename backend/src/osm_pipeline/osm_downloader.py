@@ -86,13 +86,25 @@ def download_osm_by_place(place_name: str, dist: int = 2000) -> str:
     # Fix datatype issues
     graph = _fix_oneway_dtype(graph)
 
-    safe_name = place_name.replace(",", "").replace(" ", "_").lower()
+    # Normalize: collapse any run of spaces/commas/underscores into one underscore
+    import re
+    safe_name = re.sub(r'[,\s]+', '_', place_name).strip('_').lower()
     osm_path = os.path.join(OSM_RAW_DIR, f"{safe_name}.osm")
 
-    ox.save_graph_xml(graph, filepath=osm_path)
 
-    logger.info(f"OSM file saved to: {osm_path}")
-    return osm_path
+    ox.save_graph_xml(graph, filepath=osm_path)
+    
+    # Calculate center coordinates for camera positioning
+    nodes = ox.graph_to_gdfs(graph, edges=False)
+    center_y = float(nodes.y.mean())
+    center_x = float(nodes.x.mean())
+
+    logger.info(f"OSM file saved to: {osm_path} | Center: ({center_x}, {center_y})")
+    
+    return {
+        "path": osm_path,
+        "center": [center_x, center_y]
+    }
 
 
 def download_osm_by_bbox(north: float, south: float, east: float, west: float, name: str = "custom") -> str:
@@ -125,9 +137,18 @@ def download_osm_by_bbox(north: float, south: float, east: float, west: float, n
         osm_path = os.path.join(OSM_RAW_DIR, f"{safe_name}.osm")
 
         ox.save_graph_xml(graph, filepath=osm_path)
+        
+        # Calculate center
+        nodes = ox.graph_to_gdfs(graph, edges=False)
+        center_y = float(nodes.y.mean())
+        center_x = float(nodes.x.mean())
 
-        logger.info(f"OSM file saved to: {osm_path}")
-        return osm_path
+        logger.info(f"OSM file saved to: {osm_path} | Center: ({center_x}, {center_y})")
+        
+        return {
+            "path": osm_path,
+            "center": [center_x, center_y]
+        }
 
     except Exception as e:
         logger.error(f"Failed to download OSM for bbox: {e}")

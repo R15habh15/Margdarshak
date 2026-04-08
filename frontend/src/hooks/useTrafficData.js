@@ -80,6 +80,19 @@ export function useTrafficData() {
           sim_time: msg.sim_time,
           mode:     msg.mode,
         }))
+
+        // Instantly update metrics from stream (no waiting for poll)
+        if (msg.avg_speed_kmh !== undefined) {
+          setCurrentMetrics({
+            active_vehicles: msg.active_vehicles,
+            total_queue:     msg.total_queue,
+            total_wait:      msg.total_wait,
+            avg_speed_kmh:   msg.avg_speed_kmh,
+            departed:        msg.departed,
+            arrived:         msg.arrived,
+            step:            msg.step,
+          })
+        }
       },
       (e) => { setError('WebSocket error. Is the simulation running?'); setStreamActive(false) },
       (e) => { setStreamActive(false); wsRef.current = null; pollStatus() },

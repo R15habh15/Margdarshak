@@ -1,12 +1,18 @@
 """
 signal_controller.py
 Manages traffic signal phase control for all intersections.
+
+Key anti-deadlock features:
+  - Detects green vs yellow/all-red phases and handles them differently
+  - Adaptive green duration based on queue pressure
+  - Deadlock detection via stagnant queue monitoring
+  - Forced phase rotation to break gridlock
 """
 
 import logging
 from enum import Enum
-from dataclasses import dataclass
-from typing import Dict, Optional
+from dataclasses import dataclass, field
+from typing import Dict, Optional, List
 from .traci_bridge import TraCIBridge
 
 logger = logging.getLogger(__name__)
@@ -25,13 +31,21 @@ class SignalState:
     phase_duration: int = 30
     total_phases: int = 1
     mode: SignalMode = SignalMode.STATIC
+    # Phase classification: True = green (vehicles move), False = yellow/all-red
+    green_phases: List[int] = field(default_factory=list)
+    # Deadlock tracking
+    stagnant_steps: int = 0
+    last_queue_snapshot: int = 0
 
 
 class SignalController:
 
-    DEFAULT_PHASE_DURATION = 30
+    DEFAULT_GREEN_DURATION = 20   # seconds on a green phase
+    YELLOW_DURATION = 4           # fast pass-through for yellow/all-red
     MIN_PHASE_DURATION = 5
-    MAX_PHASE_DURATION = 90
+    MAX_PHASE_DURATION = 60
+    DEADLOCK_THRESHOLD = 40       # steps of zero movement → deadlock
+    DEADLOCK_FORCE_DURATION = 8   # forced green to break gridlock
 
     def __init__(self, bridge: TraCIBridge, mode: SignalMode = SignalMode.STATIC):
 
@@ -40,7 +54,7 @@ class SignalController:
         self.signals: Dict[str, SignalState] = {}
         self.last_action = {}
         self.last_switch_step = {}
-        self.min_green_time = 8  # ✅ prevents rapid switching
+        self.min_green_time = 8  # prevents rapid switching
         self.current_step = 0
 
     # -------------------------------------------------------------
@@ -48,6 +62,8 @@ class SignalController:
     # -------------------------------------------------------------
 
     def initialize(self):
+
+        import traci
 
         tl_ids = self.bridge.get_traffic_light_ids()
 
@@ -64,14 +80,33 @@ class SignalController:
 
             current_phase = self.bridge.get_tl_phase(tl_id)
 
+            # Classify which phases are "green" (have 'G' or 'g') vs transitional
+            green_phases = []
+            try:
+                programs = traci.trafficlight.getAllProgramLogics(tl_id)
+                if programs:
+                    for i, phase in enumerate(programs[0].phases):
+                        state_str = phase.state.upper()
+                        if 'G' in state_str:
+                            green_phases.append(i)
+            except Exception:
+                # Fallback: treat all even-indexed phases as green
+                green_phases = list(range(0, total_phases, 2))
+
+            if not green_phases:
+                green_phases = list(range(total_phases))
+
             self.signals[tl_id] = SignalState(
                 tl_id=tl_id,
                 current_phase=current_phase,
                 phase_timer=0,
-                phase_duration=self.DEFAULT_PHASE_DURATION,
+                phase_duration=self.DEFAULT_GREEN_DURATION,
                 total_phases=total_phases,
                 mode=self.mode,
+                green_phases=green_phases,
             )
+
+            logger.debug(f"TL {tl_id}: {total_phases} phases, green={green_phases}")
 
         logger.info(f"Controlling {len(self.signals)} valid traffic lights.")
 
@@ -94,7 +129,12 @@ class SignalController:
 
     def step(self, ai_actions: Optional[Dict[str, int]] = None):
 
+        self.current_step += 1
+
         for tl_id, state in self.signals.items():
+
+            # ── Deadlock detection (runs in all modes) ──
+            self._check_deadlock(state)
 
             if self.mode == SignalMode.STATIC:
                 self._step_static(state)
@@ -104,20 +144,86 @@ class SignalController:
                 self._step_ai(state, action)
 
     # -------------------------------------------------------------
-    # Static Mode
+    # Deadlock Detection & Recovery
+    # -------------------------------------------------------------
+
+    def _check_deadlock(self, state: SignalState):
+        """Monitor for gridlock and force phase rotation to break it."""
+        try:
+            controlled_lanes = self.bridge.get_controlled_lanes(state.tl_id)
+            total_queue = sum(
+                self.bridge.get_lane_queue_length(lane)
+                for lane in controlled_lanes
+            )
+
+            # If queue is high and hasn't changed, increment stagnation counter
+            if total_queue > 3 and total_queue == state.last_queue_snapshot:
+                state.stagnant_steps += 1
+            else:
+                state.stagnant_steps = 0
+
+            state.last_queue_snapshot = total_queue
+
+            # Deadlock detected → force advance to next green phase
+            if state.stagnant_steps >= self.DEADLOCK_THRESHOLD:
+                logger.warning(
+                    f"Deadlock detected at TL {state.tl_id} "
+                    f"(queue={total_queue}, stagnant for {state.stagnant_steps} steps). "
+                    f"Forcing phase rotation."
+                )
+                next_green = self._next_green_phase(state)
+                self._apply_phase(state, next_green)
+                state.phase_timer = 0
+                state.phase_duration = self.DEADLOCK_FORCE_DURATION
+                state.stagnant_steps = 0
+
+        except Exception as e:
+            logger.debug(f"Deadlock check error for {state.tl_id}: {e}")
+
+    # -------------------------------------------------------------
+    # Static Mode (phase-aware)
     # -------------------------------------------------------------
 
     def _step_static(self, state: SignalState):
 
         state.phase_timer += 1
 
-        if state.phase_timer >= state.phase_duration:
+        is_green = state.current_phase in state.green_phases
 
+        # Green phases: dwell for the configured duration
+        # Yellow/all-red transitions: pass through quickly
+        duration = state.phase_duration if is_green else self.YELLOW_DURATION
+
+        if state.phase_timer >= duration:
             next_phase = (state.current_phase + 1) % state.total_phases
-
             self._apply_phase(state, next_phase)
-
             state.phase_timer = 0
+
+            # If entering a new green phase, compute adaptive duration
+            if next_phase in state.green_phases:
+                state.phase_duration = self._adaptive_green_duration(state)
+
+    def _adaptive_green_duration(self, state: SignalState) -> int:
+        """
+        Compute green duration based on queue pressure on incoming lanes.
+        Higher queues → longer green to flush vehicles through.
+        """
+        try:
+            controlled_lanes = self.bridge.get_controlled_lanes(state.tl_id)
+            if not controlled_lanes:
+                return self.DEFAULT_GREEN_DURATION
+
+            total_queue = sum(
+                self.bridge.get_lane_queue_length(lane)
+                for lane in controlled_lanes
+            )
+
+            # Scale: base 12s + 2s per queued vehicle, capped
+            adaptive = 12 + int(total_queue * 2)
+            return max(self.MIN_PHASE_DURATION, min(adaptive, self.MAX_PHASE_DURATION))
+
+        except Exception:
+            return self.DEFAULT_GREEN_DURATION
 
     # -------------------------------------------------------------
     # AI Mode
@@ -125,31 +231,32 @@ class SignalController:
 
     def _step_ai(self, state: SignalState, action: Optional[int]):
 
-        self.current_step += 1
-
         tl_id = state.tl_id
 
         if action is None:
             state.phase_timer += 1
             return
 
-        phase = action % state.total_phases
+        # Map AI action to a green phase (skip yellow/transition phases)
+        if state.green_phases:
+            phase = state.green_phases[action % len(state.green_phases)]
+        else:
+            phase = action % state.total_phases
 
-        # ✅ First-time initialization
+        # First-time initialization
         if tl_id not in self.last_action:
             self.last_action[tl_id] = state.current_phase
             self.last_switch_step[tl_id] = self.current_step
 
-        # ✅ Prevent rapid switching (CRITICAL FIX)
+        # Prevent rapid switching
         if phase != self.last_action[tl_id]:
-
             if self.current_step - self.last_switch_step[tl_id] < self.min_green_time:
-                phase = self.last_action[tl_id]  # ❌ ignore fast switching
+                phase = self.last_action[tl_id]
             else:
                 self.last_switch_step[tl_id] = self.current_step
                 self.last_action[tl_id] = phase
 
-        # ✅ Apply phase only if changed
+        # Apply phase only if changed
         if phase != state.current_phase:
             self._apply_phase(state, phase)
             state.phase_timer = 0
@@ -157,19 +264,28 @@ class SignalController:
             state.phase_timer += 1
 
     # -------------------------------------------------------------
-    # Phase Application
+    # Phase Helpers
     # -------------------------------------------------------------
+
+    def _next_green_phase(self, state: SignalState) -> int:
+        """Find the next green phase after the current one."""
+        if not state.green_phases:
+            return (state.current_phase + 1) % state.total_phases
+
+        try:
+            idx = state.green_phases.index(state.current_phase)
+            next_idx = (idx + 1) % len(state.green_phases)
+        except ValueError:
+            next_idx = 0
+
+        return state.green_phases[next_idx]
 
     def _apply_phase(self, state: SignalState, phase: int):
 
         try:
-
             self.bridge.set_tl_phase(state.tl_id, phase)
-
             state.current_phase = phase
-
         except Exception as e:
-
             logger.warning(f"Failed to set phase for {state.tl_id}: {e}")
 
     # -------------------------------------------------------------
@@ -188,9 +304,7 @@ class SignalController:
         self._apply_phase(state, phase)
 
         if duration:
-
             clamped = max(self.MIN_PHASE_DURATION, min(duration, self.MAX_PHASE_DURATION))
-
             self.bridge.set_tl_phase_duration(tl_id, clamped)
 
     def get_all_states(self) -> Dict[str, dict]:
@@ -202,6 +316,8 @@ class SignalController:
                 "duration": state.phase_duration,
                 "total_phases": state.total_phases,
                 "mode": state.mode,
+                "is_green": state.current_phase in state.green_phases,
+                "stagnant": state.stagnant_steps,
             }
             for tl_id, state in self.signals.items()
         }
@@ -219,7 +335,7 @@ class SignalController:
 
         env.start(port=port)
 
-        # ❌ Skip invalid maps
+        # Skip invalid maps
         if len(env.bridge.get_traffic_light_ids()) == 0:
             env.stop()
             return
@@ -228,7 +344,7 @@ class SignalController:
 
             state_matrix, raw, _ = build_network_state(env.bridge, tl_order=agent.tl_ids)
 
-            # ✅ Skip mismatched graph sizes
+            # Skip mismatched graph sizes
             if state_matrix.shape[0] != len(agent.tl_ids):
                 continue
 

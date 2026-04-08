@@ -1,10 +1,12 @@
 import { useRef, useEffect, useState } from 'react'
 import MapLayers from './MapLayers'
 import VehicleLayer from './VehicleLayer'
+import EmergencyLayer from './EmergencyLayer'
+import MapLegend from './MapLegend'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
-export default function TrafficMap({ tlStates, liveState }) {
+export default function TrafficMap({ tlStates, liveState, simRunning, center }) {
   const mapContainer = useRef(null)
   const mapRef       = useRef(null)
   const [mapReady, setMapReady]   = useState(false)
@@ -87,6 +89,14 @@ export default function TrafficMap({ tlStates, liveState }) {
     return () => { mapRef.current?.remove() }
   }, [])
 
+  // ── Auto-center when map is imported ──
+  useEffect(() => {
+    if (mapReady && mapRef.current && center) {
+      mapRef.current.flyTo({ center: center, zoom: 16, duration: 3000 });
+      hasFocused.current = true; // prevent vehicle-follow if we just manually imported
+    }
+  }, [mapReady, center])
+
   // Auto-center the camera to the simulation area if vehicles are actively moving
   useEffect(() => {
     if (mapReady && mapRef.current && liveState?.vehicles?.length > 0 && !hasFocused.current) {
@@ -122,8 +132,10 @@ export default function TrafficMap({ tlStates, liveState }) {
 
       {mapReady && mapRef.current && (
         <>
-          <MapLayers   map={mapRef.current} tlStates={tlStates} />
-          <VehicleLayer map={mapRef.current} liveState={liveState} />
+          <MapLayers      map={mapRef.current} tlStates={tlStates} />
+          <VehicleLayer   map={mapRef.current} liveState={liveState} />
+          <EmergencyLayer map={mapRef.current} liveState={liveState} />
+          <MapLegend simRunning={simRunning} />
         </>
       )}
     </div>

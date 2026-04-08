@@ -24,9 +24,9 @@ os.makedirs(CONFIGS_DIR, exist_ok=True)
 
 def generate_routes(
     network_filename: str,
-    num_vehicles: int = 200,
+    num_vehicles: int = 4000,
     simulation_duration: int = 3600,
-    vehicle_density_period: float = 2.0,
+    vehicle_density_period: float = 0.9,   # ~4000 vehicles per hour (1 per 0.9s)
 ) -> dict:
     """
     Generate random vehicle routes for a SUMO simulation.
@@ -109,7 +109,10 @@ def _write_sumo_config(config_path: str, net_path: str, route_path: str, duratio
     </time>
     <processing>
         <ignore-route-errors value="true"/>
-        <time-to-teleport value="300"/>
+        <time-to-teleport value="60"/>
+        <collision.action value="teleport"/>
+        <collision.mingap-factor value="0"/>
+        <time-to-teleport.highways value="30"/>
     </processing>
     <report>
         <verbose value="false"/>

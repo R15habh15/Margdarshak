@@ -23,10 +23,11 @@ def _get_env():
     return _env
 
 
-# Store separate metric summaries for static vs AI runs
+# Store separate metric summaries for static / backpressure / ai runs
 _comparison_store: dict = {
-    "static": None,
-    "ai":     None,
+    "static":      None,
+    "ai":          None,
+    "backpressure": None,
 }
 
 
@@ -47,36 +48,16 @@ async def get_current_metrics():
     if not state:
         return {"status": "no_data_yet"}
 
-    tl_data = state.get("traffic_lights", {})
-
-    total_vehicles  = state.get("active_vehicles", 0)
-    total_queue     = sum(
-        sum(l["queue_length"]  for l in tl["lanes"].values())
-        for tl in tl_data.values()
-    )
-    total_wait      = sum(
-        sum(l["waiting_time"]  for l in tl["lanes"].values())
-        for tl in tl_data.values()
-    )
-    avg_speed       = 0.0
-    lane_count      = 0
-    for tl in tl_data.values():
-        for lane in tl["lanes"].values():
-            if lane["vehicle_count"] > 0:
-                avg_speed  += lane["mean_speed"]
-                lane_count += 1
-    if lane_count > 0:
-        avg_speed /= lane_count
-
     return {
         "step":             state.get("step", 0),
         "sim_time":         state.get("sim_time", 0),
         "mode":             state.get("mode", "unknown"),
-        "active_vehicles":  total_vehicles,
-        "total_queue":      total_queue,
-        "total_wait":       round(total_wait, 2),
-        "avg_speed_ms":     round(avg_speed, 3),
-        "avg_speed_kmh":    round(avg_speed * 3.6, 2),
+        "active_vehicles":  state.get("active_vehicles", 0),
+        "total_queue":      state.get("total_queue", 0),
+        "total_wait":       state.get("total_wait", 0),
+        "avg_wait":         state.get("avg_wait", 0),
+        "avg_speed_ms":     round(state.get("avg_speed_kmh", 0) / 3.6, 3),
+        "avg_speed_kmh":    state.get("avg_speed_kmh", 0),
         "departed":         state.get("departed", 0),
         "arrived":          state.get("arrived", 0),
     }
@@ -122,11 +103,21 @@ async def save_comparison_snapshot():
     summary = env.get_metrics_summary()
     mode    = str(summary["mode"])
 
+    mode = str(summary["mode"]).lower()
+
     if mode in _comparison_store:
         _comparison_store[mode] = summary
         return {"status": "saved", "mode": mode}
+    elif mode == "signalmode.ai":
+        _comparison_store["ai"] = summary
+        return {"status": "saved", "mode": "ai"}
+    elif mode == "signalmode.static":
+        _comparison_store["static"] = summary
+        return {"status": "saved", "mode": "static"}
     else:
-        raise HTTPException(status_code=422, detail=f"Unknown mode: {mode}")
+        # Best-effort: store under closest match
+        _comparison_store["static"] = summary
+        return {"status": "saved", "mode": mode}
 
 
 @router.get("/comparison")
@@ -137,42 +128,44 @@ async def get_comparison():
     Includes calculated improvement percentages.
     """
     static = _comparison_store.get("static")
+    bp     = _comparison_store.get("backpressure")
     ai     = _comparison_store.get("ai")
 
-    if not static or not ai:
+    def pct_change(base, new_val):
+        if not base or base == 0:
+            return 0.0
+        return round((new_val - base) / base * 100, 2)
+
+    def mode_block(m):
+        if not m:
+            return None
         return {
-            "ready":  False,
-            "static": static,
-            "ai":     ai,
-            "message": "Run both static and AI simulations then call /comparison/save for each.",
+            "total_waiting_time": m.get("total_waiting_time", 0),
+            "total_arrived":      m.get("total_arrived", 0),
+            "total_departed":     m.get("total_departed", 0),
+            "total_steps":        m.get("total_steps", 0),
         }
 
-    def pct_change(base, new):
-        if base == 0:
-            return 0.0
-        return round((new - base) / base * 100, 2)
+    s_block  = mode_block(static)
+    bp_block = mode_block(bp)
+    ai_block = mode_block(ai)
 
-    wait_improvement    = pct_change(static["total_waiting_time"], ai["total_waiting_time"])
-    arrived_improvement = pct_change(static["total_arrived"],      ai["total_arrived"])
+    improvement = {}
+    if static and ai:
+        improvement = {
+            "waiting_time_change_pct":  pct_change(static["total_waiting_time"], ai["total_waiting_time"]),
+            "throughput_change_pct":    pct_change(static["total_arrived"],      ai["total_arrived"]),
+            "waiting_reduced":          ai["total_waiting_time"] < static["total_waiting_time"],
+            "throughput_increased":     ai["total_arrived"] > static["total_arrived"],
+        }
+
+    ready = bool(static or bp or ai)
 
     return {
-        "ready":  True,
-        "static": {
-            "total_waiting_time": static["total_waiting_time"],
-            "total_arrived":      static["total_arrived"],
-            "total_departed":     static["total_departed"],
-            "total_steps":        static["total_steps"],
-        },
-        "ai": {
-            "total_waiting_time": ai["total_waiting_time"],
-            "total_arrived":      ai["total_arrived"],
-            "total_departed":     ai["total_departed"],
-            "total_steps":        ai["total_steps"],
-        },
-        "improvement": {
-            "waiting_time_change_pct":  wait_improvement,
-            "throughput_change_pct":    arrived_improvement,
-            "waiting_reduced":          wait_improvement < 0,
-            "throughput_increased":     arrived_improvement > 0,
-        },
+        "ready":        ready,
+        "static":       s_block,
+        "backpressure": bp_block,
+        "ai":           ai_block,
+        "improvement":  improvement,
+        "message": None if ready else "Run simulations and save each mode.",
     }

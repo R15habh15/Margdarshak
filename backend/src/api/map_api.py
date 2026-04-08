@@ -51,7 +51,7 @@ class ConvertRequest(BaseModel):
 
 class GenerateRoutesRequest(BaseModel):
     network_filename: str
-    num_vehicles: Optional[int] = 200
+    num_vehicles: Optional[int] = 4000
     simulation_duration: Optional[int] = 3600
     vehicle_density_period: Optional[float] = 2.0
 
@@ -68,7 +68,9 @@ async def download_map_by_place(req: DownloadByPlaceRequest):
 
     try:
         # Step 1 — download OSM
-        osm_path = download_osm_by_place(req.place_name)
+        osm_res = download_osm_by_place(req.place_name)
+        osm_path = osm_res["path"]
+        center = osm_res["center"]
 
         # Extract filename
         osm_filename = os.path.basename(osm_path)
@@ -85,8 +87,12 @@ async def download_map_by_place(req: DownloadByPlaceRequest):
             "place": req.place_name,
             "osm_file": osm_filename,
             "network_file": net_filename,
-            **routes,
+            "center": center,  # [lng, lat]
+            "config": routes.get("config", ""),
+            "config_file": os.path.basename(routes.get("config", "")),
+            **{k: v for k, v in routes.items() if k != "config"},
         }
+
 
     except Exception as e:
         logger.error(f"Map download pipeline failed: {e}")
@@ -101,13 +107,15 @@ async def download_map_by_place(req: DownloadByPlaceRequest):
 async def download_map_by_bbox(req: DownloadByBboxRequest):
 
     try:
-        osm_path = download_osm_by_bbox(
+        osm_res = download_osm_by_bbox(
             req.north,
             req.south,
             req.east,
             req.west,
             req.name
         )
+        osm_path = osm_res["path"]
+        center = osm_res["center"]
 
         osm_filename = os.path.basename(osm_path)
 
@@ -120,6 +128,7 @@ async def download_map_by_bbox(req: DownloadByBboxRequest):
             "status": "success",
             "osm_file": osm_filename,
             "network_file": net_filename,
+            "center": center,
             **routes,
         }
 

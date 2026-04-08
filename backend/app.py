@@ -5,7 +5,7 @@ Margadarshak — FastAPI Entry Point
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api import simulation_api, map_api, metrics_api
+from src.api import simulation_api, map_api, metrics_api, scenario_api
 from src.brain.model_manager import ModelManager
 
 app = FastAPI(
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(map_api.router, prefix="/api/map", tags=["Map"])
 app.include_router(simulation_api.router, prefix="/api/simulation", tags=["Simulation"])
 app.include_router(metrics_api.router, prefix="/api/metrics", tags=["Metrics"])
+app.include_router(scenario_api.router, prefix="/api/scenario", tags=["Scenario"])
 
 model_manager = ModelManager()
 

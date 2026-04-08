@@ -154,6 +154,9 @@ class TrafficEnv:
 
                 logger.warning(f"Skipping TL {tl_id}: {e}")
 
+        # Global metrics for all vehicles
+        global_metrics = self.bridge.get_global_metrics()
+
         return {
             "sim_time": sim_time,
             "step": step,
@@ -163,6 +166,11 @@ class TrafficEnv:
             "traffic_lights": tl_states,
             "signal_states": self.controller.get_all_states(),
             "mode": self.mode,
+            # Integrated global metrics
+            "avg_speed_kmh": global_metrics["avg_speed_kmh"],
+            "total_wait":    global_metrics["total_waiting_time"],
+            "avg_wait":      global_metrics["avg_waiting_time"],
+            "total_queue":   global_metrics["total_halting"],
         }
 
     # ------------------------------------------------------------
@@ -176,13 +184,9 @@ class TrafficEnv:
         self.metrics.total_vehicles_departed += state["departed"]
         self.metrics.total_vehicles_arrived += state["arrived"]
 
-        waiting_sum = 0.0
-
-        for tl_data in state["traffic_lights"].values():
-            for lane_data in tl_data["lanes"].values():
-                waiting_sum += lane_data["waiting_time"]
-
-        self.metrics.total_waiting_time += waiting_sum
+        # Accumulate total waiting time (vehicle-seconds)
+        # We use the total number of halted vehicles in this step.
+        self.metrics.total_waiting_time += state.get("total_queue", 0)
 
         if self.metrics.total_steps % 60 == 0:
 

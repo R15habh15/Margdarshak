@@ -3,11 +3,12 @@ import {
   Play, Square, RotateCcw, Download, RefreshCw,
   Zap, Clock, GitCompare, ChevronDown, ChevronUp, Loader2
 } from 'lucide-react'
-import { mapApi } from '../../services/api'
+import { mapApi, simulationApi } from '../../services/api'
 
 export default function ControlPanel({
   simStatus, isLoading,
   onStart, onStop, onReset, onSwitchMode, onSaveComparison,
+  onMapImported,
 }) {
   const [placeName, setPlaceName]   = useState('')
   const [configFile, setConfigFile] = useState('')
@@ -15,6 +16,7 @@ export default function ControlPanel({
   const [pipelineStep, setPipelineStep] = useState(null)
   const [pipelineMsg, setPipelineMsg]   = useState('')
   const [expanded, setExpanded]     = useState(true)
+  const [simSpeed, setSimSpeed]     = useState(5)
 
   const isRunning = simStatus?.running
 
@@ -24,36 +26,31 @@ export default function ControlPanel({
 
   try {
     setPipelineStep('downloading')
-    setPipelineMsg('Downloading OSM map…')
-    await mapApi.downloadByPlace(placeName)
+    setPipelineMsg('Downloading OSM map, converting, and generating routes… (this may take 1–2 minutes)')
 
-    const osmFile =
-    placeName.replace(/[, ]+/g, '_').toLowerCase() + '.osm'
+    // The backend /api/map/download/place already runs the FULL pipeline:
+    // OSM download → netconvert → route generation in one call.
+    // It returns { osm_file, network_file, config, ... }
+    const result = await mapApi.downloadByPlace(placeName)
 
-    setPipelineStep('converting')
-    setPipelineMsg('Converting to SUMO network…')
+    // Notify parent about new coordinates
+    if (onMapImported) onMapImported(result)
 
-    const cv = await mapApi.convertToSumo(osmFile)
+    // Extract the config filename from the backend response.
+    // Backend returns both `config` (full path) and `config_file` (basename only).
+    const cfg = result?.config_file
+      || (result?.config ? result.config.split(/[/\\]/).pop() : null)
+      || (result?.network_file ? result.network_file.replace('.net.xml', '.sumocfg') : null)
 
-    if (!cv?.net_path)
-      throw new Error('Backend did not return net_path')
 
-    const netFile = cv.net_path.split(/[\\/]/).pop()
-
-    setPipelineStep('routes')
-    setPipelineMsg('Generating vehicle routes…')
-
-    const rt = await mapApi.generateRoutes(netFile)
-
-    if (!rt?.config)
-      throw new Error('Backend did not return config')
-
-    const cfg = rt.config.split(/[\\/]/).pop()
+    if (!cfg) {
+      throw new Error('Backend did not return a config filename. Check server logs.')
+    }
 
     setConfigFile(cfg)
 
     setPipelineStep('done')
-    setPipelineMsg(`Ready: ${cfg}. Launching...`)
+    setPipelineMsg(`✅ Ready: ${cfg}. Launching simulation…`)
 
     // Auto-start simulation
     onStart(cfg, mode)
@@ -83,6 +80,15 @@ export default function ControlPanel({
   const handleStart = () => {
     if (!configFile) return
     onStart(configFile, mode)
+  }
+
+  const handleSpeed = async (speed) => {
+    try {
+      await simulationApi.setSpeed(speed)
+      setSimSpeed(speed)
+    } catch (e) {
+      console.error('Failed to set speed:', e)
+    }
   }
 
   return (
@@ -215,12 +221,40 @@ export default function ControlPanel({
               <button onClick={() => onSwitchMode('static')} className="btn btn-ghost flex-1">
                 <Clock size={12}/> Static
               </button>
+              <button onClick={() => onSwitchMode('backpressure')} className="btn btn-warning flex-1">
+                BP
+              </button>
               <button onClick={() => onSwitchMode('ai')} className="btn btn-primary flex-1">
                 <Zap size={12}/> AI
               </button>
             </div>
           </div>
         )}
+
+        {/* Speed control */}
+        {isRunning && (
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
+              Simulation Speed
+            </label>
+            <div className="grid grid-cols-5 gap-1">
+              {[1, 2, 5, 10, 20].map(s => (
+                <button
+                  key={s}
+                  onClick={() => handleSpeed(s)}
+                  className={`py-1.5 rounded text-[11px] font-mono font-bold border transition-all
+                    ${simSpeed === s
+                      ? 'bg-accent/20 text-accent border-accent/40 shadow-[0_0_8px_rgba(0,229,255,0.2)]'
+                      : 'bg-transparent text-muted border-border hover:border-muted/40 hover:text-white'
+                    }`}
+                >
+                  {s}x
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
 
         {/* Save comparison */}
         <button

@@ -60,6 +60,8 @@ export const simulationApi = {
 
   setMode: (mode) => http.post('/api/simulation/set-mode', { mode }),
 
+  setSpeed: (speed) => http.post('/api/simulation/set-speed', { speed }),
+
   getStatus: () => http.get('/api/simulation/status'),
 }
 
@@ -84,6 +86,18 @@ export const trainingApi = {
   getHistory: ()       => http.get('/api/training/history'),
   getModels:  ()       => http.get('/api/training/models'),
   loadModel:  (filename) => http.post('/api/training/load', { filename }),
+}
+
+// ================================================================
+// Scenario API
+// ================================================================
+export const scenarioApi = {
+  spawnEmergency:  (opts = {}) => http.post('/api/scenario/emergency', opts),
+  rushHour:        (extra = 50) => http.post('/api/scenario/rush-hour', { extra_vehicles: extra }),
+  roadClosure:     (edgeId = null) => http.post('/api/scenario/road-closure', { edge_id: edgeId }),
+  rain:            (factor = 0.6) => http.post('/api/scenario/rain', { speed_factor: factor }),
+  clearAll:        () => http.post('/api/scenario/clear'),
+  getStatus:       () => http.get('/api/scenario/status'),
 }
 
 // ================================================================

@@ -1,5 +1,7 @@
 # Virtual environments
 backend/venv/
+backend/venv*/
+venv*/
 
 # Python caches and compiled files
 __pycache__/
