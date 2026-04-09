@@ -37,6 +37,7 @@ class SignalState:
     stagnant_steps: int = 0
     last_queue_snapshot: int = 0
     force_override_timer: int = 0
+    target_phase: Optional[int] = None
 
 
 class SignalController:
@@ -55,7 +56,7 @@ class SignalController:
         self.signals: Dict[str, SignalState] = {}
         self.last_action = {}
         self.last_switch_step = {}
-        self.min_green_time = 8  # prevents rapid switching
+        self.min_green_time = 15  # increased to prevent rapid switching and improve flow
         self.current_step = 0
 
     # -------------------------------------------------------------
@@ -220,27 +221,46 @@ class SignalController:
 
         # Map AI action to a green phase (skip yellow/transition phases)
         if state.green_phases:
-            phase = state.green_phases[action % len(state.green_phases)]
+            desired_phase = state.green_phases[action % len(state.green_phases)]
         else:
-            phase = action % state.total_phases
+            desired_phase = action % state.total_phases
 
         # First-time initialization
         if tl_id not in self.last_action:
             self.last_action[tl_id] = state.current_phase
             self.last_switch_step[tl_id] = self.current_step
 
+        # Are we currently transitioning through yellow/all-red?
+        if state.target_phase is not None:
+            state.phase_timer += 1
+            if state.phase_timer >= self.YELLOW_DURATION:
+                # Transition complete, apply the new target green phase
+                self._apply_phase(state, state.target_phase)
+                state.target_phase = None
+                state.phase_timer = 0
+            return
+
         # Prevent rapid switching
-        if phase != self.last_action[tl_id]:
+        if desired_phase != self.last_action[tl_id]:
             if self.current_step - self.last_switch_step[tl_id] < self.min_green_time:
-                phase = self.last_action[tl_id]
+                desired_phase = self.last_action[tl_id]
             else:
                 self.last_switch_step[tl_id] = self.current_step
-                self.last_action[tl_id] = phase
+                self.last_action[tl_id] = desired_phase
 
-        # Apply phase only if changed
-        if phase != state.current_phase:
-            self._apply_phase(state, phase)
-            state.phase_timer = 0
+        # Trigger phase change if AI decided to switch
+        if desired_phase != state.current_phase:
+            # Look ahead to see if the next sequential phase is a yellow transition
+            next_yellow = (state.current_phase + 1) % state.total_phases
+            if next_yellow not in state.green_phases:
+                # Enter transition mode
+                self._apply_phase(state, next_yellow)
+                state.target_phase = desired_phase
+                state.phase_timer = 0
+            else:
+                # Fallback if no yellow phase exists
+                self._apply_phase(state, desired_phase)
+                state.phase_timer = 0
         else:
             state.phase_timer += 1
 

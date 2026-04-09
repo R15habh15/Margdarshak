@@ -345,28 +345,29 @@ async def clear_scenarios():
 
     try:
         for edge_id in _active_scenarios["closed_edges"]:
-            lanes = traci.edge.getLaneNumber(edge_id)
-            for idx in range(lanes):
-                try:
-                    traci.lane.setMaxSpeed(f"{edge_id}_{idx}", 13.89)
-                except Exception:
-                    pass
-
-        for vid in traci.vehicle.getIDList():
             try:
-                traci.vehicle.setMaxSpeed(vid, -1)
+                lanes = traci.edge.getLaneNumber(edge_id)
+                for idx in range(lanes):
+                    traci.lane.setMaxSpeed(f"{edge_id}_{idx}", 13.89)
             except Exception:
                 pass
 
-        _active_scenarios.update({
-            "rush_hour": False, "road_closure": False, "rain": False,
-            "emergency_active": False, "emergency_vehicle_id": None,
-            "closed_edges": [], "injected_vehicles": [],
-        })
-        return {"status": "scenarios_cleared"}
+        try:
+            for vid in traci.vehicle.getIDList():
+                traci.vehicle.setMaxSpeed(vid, -1)
+        except Exception:
+            pass
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"TraCI error during scenario clear: {e}")
+
+    # Always reset the state dictionaries!
+    _active_scenarios.update({
+        "rush_hour": False, "road_closure": False, "rain": False,
+        "emergency_active": False, "emergency_vehicle_id": None,
+        "closed_edges": [], "injected_vehicles": [],
+    })
+    return {"status": "scenarios_cleared"}
 
 
 # ================================================================
