@@ -14,6 +14,8 @@ export default function TrafficMap({ tlStates, liveState, simRunning, center }) 
   const hasFocused = useRef(false)
 
   const [viewMode, setViewMode] = useState('3d'); // '2d' or '3d'
+  const [showHeatmap, setShowHeatmap] = useState(false);
+
   
   const toggleViewMode = () => {
     const next = viewMode === '2d' ? '3d' : '2d';
@@ -127,13 +129,23 @@ export default function TrafficMap({ tlStates, liveState, simRunning, center }) 
           >
             {viewMode === '3d' ? '3D VIEW' : '2D VIEW'}
           </button>
+          <button 
+            onClick={() => setShowHeatmap(!showHeatmap)}
+            className={`px-3 py-1.5 rounded-md font-display text-xs font-bold uppercase tracking-wider backdrop-blur-md border transition-all
+              ${showHeatmap 
+                ? 'bg-danger/40 text-white border-danger/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' 
+                : 'bg-surface/80 text-muted border-border hover:text-white'
+              }`}
+          >
+            HEATMAP: {showHeatmap ? 'ON' : 'OFF'}
+          </button>
         </div>
       )}
 
       {mapReady && mapRef.current && (
         <>
           <MapLayers      map={mapRef.current} tlStates={tlStates} />
-          <VehicleLayer   map={mapRef.current} liveState={liveState} />
+          <VehicleLayer   map={mapRef.current} liveState={liveState} showHeatmap={showHeatmap} />
           <EmergencyLayer map={mapRef.current} liveState={liveState} />
           <MapLegend simRunning={simRunning} />
         </>

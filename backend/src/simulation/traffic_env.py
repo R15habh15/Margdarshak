@@ -57,6 +57,14 @@ class TrafficEnv:
         logger.info("TrafficEnv started.")
         return True
 
+    def pause(self):
+        self.running = False
+        logger.info("TrafficEnv paused.")
+
+    def resume(self):
+        self.running = True
+        logger.info("TrafficEnv resumed.")
+
     def stop(self):
 
         self.running = False
@@ -207,8 +215,10 @@ class TrafficEnv:
 
         steps = max(self.metrics.total_steps, 1)
 
+        req_mode = getattr(self, '_requested_mode', str(self.mode).split('.')[-1].lower())
+
         return {
-            "mode": self.mode,
+            "mode": req_mode,
             "total_steps": self.metrics.total_steps,
             "total_departed": self.metrics.total_vehicles_departed,
             "total_arrived": self.metrics.total_vehicles_arrived,

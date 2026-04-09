@@ -9,7 +9,7 @@ print('Networks found:', nets)
 for net in nets:
     print(f'Regenerating {net} ...')
     try:
-        r = generate_routes(net, num_vehicles=100, vehicle_density_period=10.0)
+        r = generate_routes(net)
         print('  config:', r['config'])
     except Exception as e:
         print('  ERROR:', e)

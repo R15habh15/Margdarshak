@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'react'
  * speed in the payload, we use a simple heuristic:
  *   Low speed near a junction → orange (signalled stop) — not an error
  */
-export default function VehicleLayer({ map, liveState }) {
+export default function VehicleLayer({ map, liveState, showHeatmap = false }) {
   const isAdded    = useRef(false)
   const SOURCE_ID  = 'vehicles-source'
   const SYMBOL_LAYER = 'vehicles-symbol'
@@ -34,6 +34,7 @@ export default function VehicleLayer({ map, liveState }) {
           angle: v.angle ?? 0,
           // Bucket: 0=waiting(orange), 1=slow(lime), 2=moving(cyan)
           bucket: (v.speed ?? 0) < 2 ? 0 : (v.speed ?? 0) < 8 ? 1 : 2,
+          congestion: Math.max(0, 1 - ((v.speed ?? 0) / 10)), // 0 m/s = 1.0 weight, >= 10 m/s = 0 weight
         },
       }))
   }
@@ -51,7 +52,7 @@ export default function VehicleLayer({ map, liveState }) {
           })
         }
 
-        // Halo glow behind vehicle
+        // Glow behind vehicle
         if (!map.getLayer(HALO_LAYER)) {
           map.addLayer({
             id: HALO_LAYER, type: 'circle', source: SOURCE_ID,
@@ -68,6 +69,63 @@ export default function VehicleLayer({ map, liveState }) {
               'circle-blur': 0.7,
             },
           })
+        }
+
+        // Heatmap layer for congestion
+        if (!map.getLayer('vehicles-heatmap')) {
+          map.addLayer({
+            id: 'vehicles-heatmap',
+            type: 'heatmap',
+            source: SOURCE_ID,
+            paint: {
+              // Increase the heatmap weight based on the 'congestion' property
+              'heatmap-weight': [
+                'interpolate',
+                ['linear'],
+                ['get', 'congestion'],
+                0, 0,
+                1, 1
+              ],
+              // Increase the heatmap intensity by zoom level
+              'heatmap-intensity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                12, 0.5,
+                17, 1.5
+              ],
+              // Color ramp designed for dark theme (deep blue -> purple -> pink -> red)
+              'heatmap-color': [
+                'interpolate',
+                ['linear'],
+                ['heatmap-density'],
+                0, 'rgba(0,0,0,0)',
+                0.2, 'rgba(0, 163, 255, 0.3)',   // deep blue
+                0.5, 'rgba(168, 85, 247, 0.6)',  // purple
+                0.8, 'rgba(236, 72, 153, 0.8)',  // pink
+                1, 'rgba(239, 68, 68, 0.9)'      // danger red
+              ],
+              // Adjust the heatmap radius by zoom level
+              'heatmap-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                12, 10,
+                17, 30
+              ],
+              // Transition opacity depending on zoom to balance symbol vs heatmap
+              'heatmap-opacity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                13, 0.8,
+                16, 0.5
+              ],
+            },
+            layout: {
+              'visibility': showHeatmap ? 'visible' : 'none'
+            }
+          }, HALO_LAYER); // insert before halo/symbols
         }
 
         // Directional arrow symbol
@@ -116,7 +174,7 @@ export default function VehicleLayer({ map, liveState }) {
     return () => {
       map.off('styledata', setup)
       try {
-        ;[SYMBOL_LAYER, HALO_LAYER].forEach(id => { if (map.getLayer(id)) map.removeLayer(id) })
+        ;[SYMBOL_LAYER, HALO_LAYER, 'vehicles-heatmap'].forEach(id => { if (map.getLayer(id)) map.removeLayer(id) })
         if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID)
         isAdded.current = false
       } catch (_) {}
@@ -132,6 +190,17 @@ export default function VehicleLayer({ map, liveState }) {
       console.warn('[VehicleLayer] data update error', e)
     }
   }, [map, liveState])
+
+  useEffect(() => {
+    if (!map || !isAdded.current) return
+    try {
+      if (map.getLayer('vehicles-heatmap')) {
+        map.setLayoutProperty('vehicles-heatmap', 'visibility', showHeatmap ? 'visible' : 'none')
+      }
+    } catch (e) {
+      console.warn('[VehicleLayer] visibility update error', e)
+    }
+  }, [map, showHeatmap])
 
   return null
 }

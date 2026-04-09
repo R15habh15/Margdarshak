@@ -211,49 +211,7 @@ export default function ControlPanel({
           </button>
         </div>
 
-        {/* Mode switch (mid-simulation) */}
-        {isRunning && (
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
-              Switch Mode Live
-            </label>
-            <div className="flex gap-2">
-              <button onClick={() => onSwitchMode('static')} className="btn btn-ghost flex-1">
-                <Clock size={12}/> Static
-              </button>
-              <button onClick={() => onSwitchMode('backpressure')} className="btn btn-warning flex-1">
-                BP
-              </button>
-              <button onClick={() => onSwitchMode('ai')} className="btn btn-primary flex-1">
-                <Zap size={12}/> AI
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* Speed control */}
-        {isRunning && (
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-mono text-muted uppercase tracking-wider">
-              Simulation Speed
-            </label>
-            <div className="grid grid-cols-5 gap-1">
-              {[1, 2, 5, 10, 20].map(s => (
-                <button
-                  key={s}
-                  onClick={() => handleSpeed(s)}
-                  className={`py-1.5 rounded text-[11px] font-mono font-bold border transition-all
-                    ${simSpeed === s
-                      ? 'bg-accent/20 text-accent border-accent/40 shadow-[0_0_8px_rgba(0,229,255,0.2)]'
-                      : 'bg-transparent text-muted border-border hover:border-muted/40 hover:text-white'
-                    }`}
-                >
-                  {s}x
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
 
         {/* Save comparison */}

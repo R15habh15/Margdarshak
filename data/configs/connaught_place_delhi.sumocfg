@@ -2,8 +2,8 @@
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
     <input>
-        <net-file value="C:\Users\Chinmay\Desktop\New folder (2)\Margdarshak\data\sumo_networks\karol_baghdelhiindia.net.xml"/>
-        <route-files value="C:\Users\Chinmay\Desktop\New folder (2)\Margdarshak\data\routes\karol_baghdelhiindia.rou.xml"/>
+        <net-file value="C:\Users\Chinmay\Desktop\New folder (2)\Margdarshak\data\sumo_networks\connaught_place_delhi.net.xml"/>
+        <route-files value="C:\Users\Chinmay\Desktop\New folder (2)\Margdarshak\data\routes\connaught_place_delhi.rou.xml"/>
     </input>
     <time>
         <begin value="0"/>

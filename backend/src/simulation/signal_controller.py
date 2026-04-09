@@ -36,16 +36,17 @@ class SignalState:
     # Deadlock tracking
     stagnant_steps: int = 0
     last_queue_snapshot: int = 0
+    force_override_timer: int = 0
 
 
 class SignalController:
 
-    DEFAULT_GREEN_DURATION = 20   # seconds on a green phase
-    YELLOW_DURATION = 4           # fast pass-through for yellow/all-red
+    DEFAULT_GREEN_DURATION = 40   # fixed seconds for all green phases
+    YELLOW_DURATION = 5           # realistic transition for yellow/all-red
     MIN_PHASE_DURATION = 5
     MAX_PHASE_DURATION = 60
     DEADLOCK_THRESHOLD = 40       # steps of zero movement → deadlock
-    DEADLOCK_FORCE_DURATION = 8   # forced green to break gridlock
+    DEADLOCK_FORCE_DURATION = 20  # increased forced green to fully flush gridlock
 
     def __init__(self, bridge: TraCIBridge, mode: SignalMode = SignalMode.STATIC):
 
@@ -133,13 +134,12 @@ class SignalController:
 
         for tl_id, state in self.signals.items():
 
-            # ── Deadlock detection (runs in all modes) ──
-            self._check_deadlock(state)
-
             if self.mode == SignalMode.STATIC:
                 self._step_static(state)
 
             elif self.mode == SignalMode.AI:
+                # ── Deadlock detection (runs only in AI mode) ──
+                self._check_deadlock(state)
                 action = ai_actions.get(tl_id) if ai_actions else None
                 self._step_ai(state, action)
 
@@ -176,6 +176,7 @@ class SignalController:
                 state.phase_timer = 0
                 state.phase_duration = self.DEADLOCK_FORCE_DURATION
                 state.stagnant_steps = 0
+                state.force_override_timer = self.DEADLOCK_FORCE_DURATION
 
         except Exception as e:
             logger.debug(f"Deadlock check error for {state.tl_id}: {e}")
@@ -190,40 +191,15 @@ class SignalController:
 
         is_green = state.current_phase in state.green_phases
 
-        # Green phases: dwell for the configured duration
+        # Green phases: dwell for the fixed configured duration
         # Yellow/all-red transitions: pass through quickly
-        duration = state.phase_duration if is_green else self.YELLOW_DURATION
+        duration = self.DEFAULT_GREEN_DURATION if is_green else self.YELLOW_DURATION
 
         if state.phase_timer >= duration:
             next_phase = (state.current_phase + 1) % state.total_phases
             self._apply_phase(state, next_phase)
             state.phase_timer = 0
-
-            # If entering a new green phase, compute adaptive duration
-            if next_phase in state.green_phases:
-                state.phase_duration = self._adaptive_green_duration(state)
-
-    def _adaptive_green_duration(self, state: SignalState) -> int:
-        """
-        Compute green duration based on queue pressure on incoming lanes.
-        Higher queues → longer green to flush vehicles through.
-        """
-        try:
-            controlled_lanes = self.bridge.get_controlled_lanes(state.tl_id)
-            if not controlled_lanes:
-                return self.DEFAULT_GREEN_DURATION
-
-            total_queue = sum(
-                self.bridge.get_lane_queue_length(lane)
-                for lane in controlled_lanes
-            )
-
-            # Scale: base 12s + 2s per queued vehicle, capped
-            adaptive = 12 + int(total_queue * 2)
-            return max(self.MIN_PHASE_DURATION, min(adaptive, self.MAX_PHASE_DURATION))
-
-        except Exception:
-            return self.DEFAULT_GREEN_DURATION
+            state.phase_duration = self.DEFAULT_GREEN_DURATION
 
     # -------------------------------------------------------------
     # AI Mode
@@ -232,6 +208,11 @@ class SignalController:
     def _step_ai(self, state: SignalState, action: Optional[int]):
 
         tl_id = state.tl_id
+
+        if state.force_override_timer > 0:
+            state.force_override_timer -= 1
+            state.phase_timer += 1
+            return
 
         if action is None:
             state.phase_timer += 1

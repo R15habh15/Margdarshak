@@ -36,7 +36,7 @@ router = APIRouter()
 # Single shared simulation instance (one simulation at a time)
 _env: Optional[TrafficEnv] = None
 _agent: Optional[DRLAgent] = None
-_sim_speed: int = 5   # steps per WebSocket frame (1=realtime, 5=5x, 10=10x, etc.)
+_sim_speed: int = 25  # Higher values run the loop faster (e.g. 25 = 25 frames/sec)
 
 
 # ----------------------------------------------------------------
@@ -71,7 +71,7 @@ async def start_simulation(req: StartRequest):
     if req.mode == 'ai':
         mode = SignalMode.AI
     elif req.mode == 'backpressure':
-        mode = SignalMode.STATIC   # SUMO mode; backpressure is handled at action level
+        mode = SignalMode.AI   # Uses AI mode so backpressure actions are applied via ai_actions
     else:
         mode = SignalMode.STATIC
 
@@ -84,10 +84,25 @@ async def start_simulation(req: StartRequest):
                 detail=f"SUMO config not found: {config_file}"
             )
 
+        if _env and not _env.running and getattr(_env, 'config_path', '') == config_file:
+            _env.set_mode(mode)
+            _env._requested_mode = req.mode
+            _env.resume()
+            return {
+                "status": "started",
+                "mode": req.mode,
+                "config": req.config_path,
+            }
+
+        if _env:
+            try:
+                _env.stop()
+            except Exception:
+                pass
+
         _env = TrafficEnv(config_path=config_file, mode=mode, use_gui=req.use_gui)
         _env.start(port=req.port)
         _env._requested_mode = req.mode   # preserve backpressure/ai/static string
-
 
         # ── Auto-load AI Agent ──
         if req.mode == "ai":
@@ -109,9 +124,11 @@ async def start_simulation(req: StartRequest):
                 if mm.load_inference_model(_agent, "rl_policy.pt"):
                     logger.info("AI Model 'rl_policy.pt' loaded successfully.")
                 else:
-                    logger.warning("No trained AI model found. Simulation will use default heuristics.")
+                    logger.warning("No trained AI model found. Simulation will use default Backpressure heuristics.")
+                    _agent = None  # Force fallback to backpressure instead of using random policy
             except Exception as e:
                 logger.error(f"AI Auto-load error: {e}")
+                _agent = None
 
         return {
             "status": "started",
@@ -129,8 +146,8 @@ async def stop_simulation():
     global _env
     if not _env or not _env.running:
         raise HTTPException(status_code=400, detail="No simulation is currently running.")
-    _env.stop()
-    return {"status": "stopped"}
+    _env.pause()
+    return {"status": "paused"}
 
 
 @router.post("/reset")
@@ -156,7 +173,7 @@ async def set_mode(req: SetModeRequest):
     if req.mode not in ("static", "ai", "backpressure"):
         raise HTTPException(status_code=422, detail="mode must be static | ai | backpressure")
 
-    mode = SignalMode.AI if req.mode == 'ai' else SignalMode.STATIC
+    mode = SignalMode.AI if req.mode in ('ai', 'backpressure') else SignalMode.STATIC
     _env.set_mode(mode)
     _env._requested_mode = req.mode   # track mode string for WS stream
     _env.mode = req.mode
@@ -215,8 +232,8 @@ async def simulation_stream(websocket: WebSocket):
         while _env.running and not _env.is_done():
             loop_start = time.time()
 
-            # ── Run N simulation steps per frame (speed multiplier) ──
-            steps_this_frame = _sim_speed
+            # ── Run multiple steps per frame to speed up simulation while keeping it smooth
+            steps_this_frame = 1
             state = None
 
             for _ in range(steps_this_frame):
@@ -285,7 +302,10 @@ async def simulation_stream(websocket: WebSocket):
             }
 
             loop_elapsed = time.time() - loop_start
-            wait_time = max(0.001, 0.0333 - loop_elapsed)  # Target ~30 FPS output
+            
+            # Send updates much faster than 1 per second so simulation outpaces IRL time
+            target_fps = max(1, _sim_speed) # use the frontend speed setting for frames per second
+            wait_time = max(0.001, (1.0 / target_fps) - loop_elapsed)
 
             await websocket.send_json(payload)
             await asyncio.sleep(wait_time)

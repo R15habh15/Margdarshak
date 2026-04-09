@@ -12,7 +12,10 @@
     </time>
     <processing>
         <ignore-route-errors value="true"/>
-        <time-to-teleport value="60"/>`n        <collision.action value="teleport"/>`n        <collision.mingap-factor value="0"/>
+        <time-to-teleport value="60"/>
+        <collision.action value="teleport"/>
+        <collision.mingap-factor value="0"/>
+        <time-to-teleport.highways value="30"/>
     </processing>
     <report>
         <verbose value="false"/>

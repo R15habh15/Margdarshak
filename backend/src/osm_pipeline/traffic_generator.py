@@ -24,13 +24,16 @@ os.makedirs(CONFIGS_DIR, exist_ok=True)
 
 def generate_routes(
     network_filename: str,
-    num_vehicles: int = 4000,
+    num_vehicles: int = 2800,
     simulation_duration: int = 3600,
-    vehicle_density_period: float = 0.9,   # ~4000 vehicles per hour (1 per 0.9s)
+    vehicle_density_period: float = None,
 ) -> dict:
     """
     Generate random vehicle routes for a SUMO simulation.
     """
+    if vehicle_density_period is None:
+        vehicle_density_period = simulation_duration / num_vehicles
+
 
     net_path = os.path.join(SUMO_NETWORKS_DIR, network_filename)
 

@@ -61,6 +61,8 @@ class TraCIBridge:
             "--collision.mingap-factor", "0",
             # Anti-deadlock: faster teleport on highways
             "--time-to-teleport.highways", "30",
+            # Stop vehicles from blocking each other in the junction 
+            "--ignore-junction-blocker", "10",
         ]
 
         try:
